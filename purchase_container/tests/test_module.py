@@ -10,6 +10,7 @@ class Test(BaseCommon):
         cls.product = cls.env["product.product"].create({"name": "Test Product"})
         cls.cont_a = cls.env["purchase.container"].create({"code": "AA"})
         cls.cont_b = cls.env["purchase.container"].create({"code": "BB"})
+        cls.cont_c = cls.env["purchase.container"].create({"code": "CC"})
         cls.incoterm_id = cls.env.ref("account.incoterm_FCA")
 
     def test_container_by_purchase(self):
@@ -38,22 +39,58 @@ class Test(BaseCommon):
         self.assertIn(self.cont_b, po2.container_ids)
         self.assertEqual(pick11.state, "done")
         self.assertEqual(len(self.cont_b.purchase_order_ids), 2)
-        self.assertEqual(self.cont_b.purchase_order_count, 1)
-        # this method is not computed because not a stored field
-        self.cont_b._compute_purchase_order_count()
+        self.env.flush_all()
         self.assertEqual(self.cont_b.purchase_order_count, 2)
 
         self.cont_b._compute_incoterm_id()
         self.assertEqual(self.cont_b.displayed_incoterm_id, self.incoterm_id)
 
+    def test_purchase_order_counts_multi(self):
+        """Count RFQs and orders per container on a multi-record set."""
+        rfq = self.get_po()
+        order_1 = self.get_po()
+        order_1.button_confirm()
+        order_2 = self.get_po()
+        order_2.button_confirm()
+        cancelled = self.get_po()
+        cancelled.button_cancel()
+        self.cont_a.purchase_order_ids = [Command.set((rfq | order_1).ids)]
+        self.cont_b.purchase_order_ids = [Command.set((rfq | order_1 | order_2).ids)]
+        self.cont_c.purchase_order_ids = [Command.set(cancelled.ids)]
+
+        containers = self.cont_a | self.cont_b | self.cont_c
+        self.assertEqual(containers.mapped("purchase_order_rfq_count"), [1, 1, 0])
+        self.assertEqual(containers.mapped("purchase_order_count"), [1, 2, 0])
+
+        # Draft records use their origin, new records count nothing.
+        draft = self.env["purchase.container"].new(origin=self.cont_b)
+        self.assertEqual(draft.purchase_order_count, 2)
+        self.assertEqual(draft.purchase_order_rfq_count, 1)
+        new = self.env["purchase.container"].new({"code": "NEW"})
+        self.assertEqual(new.purchase_order_count, 0)
+        self.assertEqual(new.purchase_order_rfq_count, 0)
+
+        # Counts follow state changes without a manual recompute.
+        rfq.button_cancel()
+        self.assertEqual(self.cont_a.purchase_order_rfq_count, 0)
+        self.assertEqual(self.cont_a.purchase_order_count, 1)
+        self.assertEqual(self.cont_b.purchase_order_rfq_count, 0)
+        self.assertEqual(self.cont_b.purchase_order_count, 2)
+
     def test_action_views(self):
+        rfq = self.get_po()
         po = self.get_po()
         po.button_confirm()
         pick01 = po.picking_ids[0]
         pick01.container_id = self.cont_a.id
-        self.cont_a.action_view_rfq()
-        self.cont_a.action_view_order()
-        self.cont_a.action_view_picking()
+        self.env.flush_all()
+        self.cont_a.purchase_order_ids = [Command.link(rfq.id)]
+        action = self.cont_a.action_view_rfq()
+        self.assertEqual(action["domain"], [("id", "in", rfq.ids)])
+        action = self.cont_a.action_view_order()
+        self.assertEqual(action["domain"], [("id", "in", po.ids)])
+        action = self.cont_a.action_view_picking()
+        self.assertEqual(action["domain"], [("id", "in", pick01.ids)])
 
     def get_po(self):
         return self.env["purchase.order"].create(
