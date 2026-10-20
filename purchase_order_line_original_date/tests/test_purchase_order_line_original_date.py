@@ -4,20 +4,15 @@
 from datetime import datetime
 from datetime import timedelta as td
 
-from odoo.tests import common
+from odoo import Command
+
+from odoo.addons.base.tests.common import BaseCommon
 
 
-class TestPoLineOriginalDate(common.TransactionCase):
+class TestPoLineOriginalDate(BaseCommon):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.po_model = cls.env["purchase.order"]
-
-        cls.vendor_1 = cls.env["res.partner"].create(
-            {
-                "name": "Vendor 1",
-            }
-        )
         cls.product_1 = cls.env["product.product"].create({"name": "test"})
         cls.comparison_delta = td(seconds=1)
         cls.today = datetime.today()
@@ -28,11 +23,9 @@ class TestPoLineOriginalDate(common.TransactionCase):
     def create_purchase_order(cls, product, date_planned, qty=10.0):
         return cls.env["purchase.order"].create(
             {
-                "partner_id": cls.vendor_1.id,
+                "partner_id": cls.partner.id,
                 "order_line": [
-                    (
-                        0,
-                        0,
+                    Command.create(
                         {
                             "product_id": product.id,
                             "product_uom_id": product.uom_id.id,
@@ -40,7 +33,7 @@ class TestPoLineOriginalDate(common.TransactionCase):
                             "price_unit": 100.0,
                             "date_planned": date_planned,
                             "product_qty": qty,
-                        },
+                        }
                     )
                 ],
             }
