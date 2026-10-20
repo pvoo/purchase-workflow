@@ -41,9 +41,34 @@ class Test(BaseCommon):
         self.assertEqual(len(self.cont_b.purchase_order_ids), 2)
         self.env.flush_all()
         self.assertEqual(self.cont_b.purchase_order_count, 2)
-
-        self.cont_b._compute_incoterm_id()
+        self.assertEqual(self.cont_b.picking_count, 2)
         self.assertEqual(self.cont_b.displayed_incoterm_id, self.incoterm_id)
+
+    def test_incoterm(self):
+        po = self.get_po()
+        self.cont_a.purchase_order_ids = [Command.link(po.id)]
+        self.assertEqual(self.cont_a.incoterm_id, self.incoterm_id)
+        self.assertEqual(self.cont_a.displayed_incoterm_id, self.incoterm_id)
+        exw = self.env.ref("account.incoterm_EXW")
+        po.incoterm_id = exw
+        self.assertEqual(self.cont_a.incoterm_id, exw)
+        self.assertEqual(self.cont_a.displayed_incoterm_id, exw)
+        # A manual incoterm wins over the purchase order incoterm.
+        cip = self.env.ref("account.incoterm_CIP")
+        self.cont_a.displayed_incoterm_id = cip
+        self.assertEqual(self.cont_a.manual_incoterm_id, cip)
+        po.incoterm_id = self.incoterm_id
+        self.assertEqual(self.cont_a.displayed_incoterm_id, cip)
+
+    def test_date_ett(self):
+        self.assertFalse(self.cont_a.date_ett)
+        self.cont_a.write(
+            {
+                "date_etd": fields.Date.to_date("2026-01-01"),
+                "date_eta": fields.Date.to_date("2026-01-10"),
+            }
+        )
+        self.assertEqual(self.cont_a.date_ett, "9 days, 0:00:00")
 
     def test_purchase_order_counts_multi(self):
         """Count RFQs and orders per container on a multi-record set."""

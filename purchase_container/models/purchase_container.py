@@ -93,7 +93,6 @@ class PurchaseContainer(models.Model):
         help="Estimated Time Of Travel",
         compute="_compute_date_ett",
         store=False,
-        tracking=True,
     )
 
     state = fields.Selection(
@@ -109,6 +108,7 @@ class PurchaseContainer(models.Model):
     )
     is_locked = fields.Boolean()
 
+    @api.depends("purchase_order_ids.incoterm_id")
     def _compute_incoterm_id(self):
         for record in self:
             record.incoterm_id = record.purchase_order_ids.filtered(
@@ -133,7 +133,7 @@ class PurchaseContainer(models.Model):
     @api.depends("date_eta", "date_etd")
     def _compute_date_ett(self):
         for record in self:
-            record.date_ett = 0
+            record.date_ett = False
             if record.date_eta and record.date_etd:
                 record.date_ett = record.date_eta - record.date_etd
 
@@ -216,6 +216,7 @@ class PurchaseContainer(models.Model):
                 counts.get((container_id, state), 0) for state in ORDER_STATES
             )
 
+    @api.depends("picking_ids")
     def _compute_picking_count(self):
         for record in self:
             record.picking_count = len(record.picking_ids)
