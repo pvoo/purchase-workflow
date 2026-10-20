@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from odoo import Command, fields
 
 from odoo.addons.base.tests.common import BaseCommon
@@ -116,6 +118,36 @@ class Test(BaseCommon):
         self.assertEqual(action["domain"], [("id", "in", po.ids)])
         action = self.cont_a.action_view_picking()
         self.assertEqual(action["domain"], [("id", "in", pick01.ids)])
+
+    def test_state(self):
+        today = fields.Date.today()
+        cont = self.cont_a
+        self.assertEqual(cont.state, "waiting")
+        cont.date_etd = today + timedelta(days=5)
+        self.assertEqual(cont.state, "waiting")
+        # The actual departure date wins over the estimated one.
+        cont.date_atd = today - timedelta(days=1)
+        self.assertEqual(cont.state, "transit")
+        cont.button_lock()
+        self.assertEqual(cont.state, "locked")
+        cont.button_unlock()
+        self.assertEqual(cont.state, "transit")
+        po = self.get_po()
+        po.button_confirm()
+        po.picking_ids.container_id = cont
+        self.assertEqual(cont.state, "transit")
+        po.picking_ids.button_validate()
+        self.assertEqual(cont.state, "arrived")
+
+    def test_code_and_name(self):
+        cont = self.env["purchase.container"].create({"name": "msku 1234567"})
+        self.assertEqual(cont.code, "MSKU")
+        cont.code = "abc"
+        self.assertEqual(cont.code, "ABC")
+        self.assertEqual(cont.name, "ABC")
+        po = self.get_po()
+        cont.purchase_order_ids = [Command.link(po.id)]
+        self.assertEqual(cont.name, f"ABC ({po.name})")
 
     def get_po(self):
         return self.env["purchase.order"].create(
