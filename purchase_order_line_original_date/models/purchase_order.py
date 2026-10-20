@@ -27,8 +27,8 @@ class PurchaseOrder(models.Model):
             else:
                 order.original_date_planned = False
 
-    def button_confirm(self):
-        res = super().button_confirm()
-        for pol in self.mapped("order_line"):
-            pol.original_date_planned = pol.date_planned
+    def button_approve(self, force=False):
+        # button_confirm calls button_approve, unless the PO waits for approval
+        res = super().button_approve(force=force)
+        self.order_line._set_original_date_planned()
         return res

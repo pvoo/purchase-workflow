@@ -5,6 +5,7 @@ from datetime import datetime
 from datetime import timedelta as td
 
 from odoo import Command
+from odoo.tests import new_test_user
 
 from odoo.addons.base.tests.common import BaseCommon
 
@@ -60,3 +61,47 @@ class TestPoLineOriginalDate(BaseCommon):
         self.assertAlmostEqual(po.date_planned, self.day_2, delta=self.comparison_delta)
         self.assertEqual(line.original_date_planned, self.tomorrow)
         self.assertEqual(line.date_planned, self.day_2)
+
+    def test_02_reconfirm_keeps_original_date(self):
+        po = self.create_purchase_order(self.product_1, self.tomorrow)
+        po.button_confirm()
+        line = po.order_line
+        original = line.original_date_planned
+        po.button_cancel()
+        po.button_draft()
+        line.date_planned = self.day_2
+        po.button_confirm()
+        self.assertEqual(po.state, "purchase")
+        self.assertEqual(line.original_date_planned, original)
+
+    def test_03_line_added_to_confirmed_po(self):
+        po = self.create_purchase_order(self.product_1, self.tomorrow)
+        po.button_confirm()
+        new_line = self.env["purchase.order.line"].create(
+            {
+                "order_id": po.id,
+                "product_id": self.product_1.id,
+                "product_qty": 1.0,
+                "price_unit": 100.0,
+                "date_planned": self.day_2,
+            }
+        )
+        self.assertEqual(new_line.original_date_planned, new_line.date_planned)
+
+    def test_04_double_validation(self):
+        self.env.company.write(
+            {"po_double_validation": "two_step", "po_double_validation_amount": 0}
+        )
+        buyer = new_test_user(
+            self.env, login="po_buyer", groups="purchase.group_purchase_user"
+        )
+        po = self.create_purchase_order(self.product_1, self.tomorrow)
+        po.with_user(buyer).button_confirm()
+        self.assertEqual(po.state, "to approve")
+        self.assertFalse(po.order_line.original_date_planned)
+        po.order_line.date_planned = self.day_2
+        po.button_approve()
+        self.assertEqual(po.state, "purchase")
+        self.assertEqual(
+            po.order_line.original_date_planned, po.order_line.date_planned
+        )
